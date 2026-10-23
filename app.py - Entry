@@ -1,0 +1,11 @@
+import sys
+from PySide6.QtWidgets import QApplication
+from ui.login_window import LoginWindow
+from database.connection import init_db
+
+if __name__ == "__main__":
+    init_db()
+    app = QApplication(sys.argv)
+    win = LoginWindow()
+    win.show()
+    sys.exit(app.exec())
