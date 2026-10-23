@@ -1,0 +1,84 @@
+from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
+                               QPushButton, QLabel, QScrollArea, QGridLayout, QListWidget)
+from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt
+
+class CashierWindow(QMainWindow):
+    def __init__(self, user):
+        super().__init__()
+        self.user = user
+        self.cart = [] # list of dicts
+        self.setWindowTitle(f"Fast-Order POS - Cashier: {user['username']}")
+        self.resize(1280, 720)
+        
+        main = QWidget()
+        layout = QHBoxLayout(main)
+        
+        # LEFT: Food Catalogue
+        left_scroll = QScrollArea()
+        left_widget = QWidget()
+        self.grid = QGridLayout(left_widget)
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setWidget(left_widget)
+        
+        # RIGHT: Order Panel
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.addWidget(QLabel("CURRENT ORDER"))
+        self.order_list = QListWidget()
+        right_layout.addWidget(self.order_list)
+        self.total_label = QLabel("Total: KES 0.00")
+        self.total_label.setStyleSheet("font-size: 24px; font-weight: bold;")
+        right_layout.addWidget(self.total_label)
+        
+        btn_pay = QPushButton("PAY (F1)")
+        btn_pay.setStyleSheet("background: #2ecc71; color: white; height: 50px; font-size: 18px;")
+        btn_pay.clicked.connect(self.open_payment)
+        right_layout.addWidget(btn_pay)
+
+        layout.addWidget(left_scroll, 3)
+        layout.addWidget(right, 1)
+        self.setCentralWidget(main)
+        self.load_menu()
+
+    def load_menu(self):
+        from database.connection import get_connection
+        conn = get_connection()
+        items = conn.execute("SELECT * FROM menu_items WHERE available=1").fetchall()
+        conn.close()
+        for idx, item in enumerate(items):
+            btn = QPushButton(f"{item['name']}\nKES {item['price_cents']/100:.2f}")
+            btn.setFixedSize(150, 100)
+            btn.clicked.connect(lambda checked, i=item: self.add_to_order(i))
+            self.grid.addWidget(btn, idx // 4, idx % 4)
+
+    def add_to_order(self, menu_item):
+        # Check if exists, increase qty
+        for c in self.cart:
+            if c['menu_item_id'] == menu_item['id']:
+                c['qty'] += 1
+                self.refresh_order()
+                return
+        self.cart.append({
+            'menu_item_id': menu_item['id'],
+            'name': menu_item['name'],
+            'qty': 1,
+            'price_cents': menu_item['price_cents']
+        })
+        self.refresh_order()
+
+    def refresh_order(self):
+        self.order_list.clear()
+        total = 0
+        for c in self.cart:
+            line = c['qty'] * c['price_cents']
+            total += line
+            self.order_list.addItem(f"{c['name']} x{c['qty']} = KES {line/100:.2f}")
+        self.total_label.setText(f"Total: KES {total/100:.2f}")
+
+    def open_payment(self):
+        from ui.payment_dialog import PaymentDialog
+        dlg = PaymentDialog(self.cart, self.user['id'], self)
+        if dlg.exec():
+            self.cart = []
+            self.refresh_order()
