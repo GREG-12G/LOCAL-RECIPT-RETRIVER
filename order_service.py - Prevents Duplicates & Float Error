@@ -1,0 +1,34 @@
+import uuid
+from database.connection import get_connection
+from datetime import datetime
+
+def generate_order_number():
+    return f"ORD-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
+
+def finalize_order(cart_items, cashier_id, order_type='dine_in'):
+    # cart_items = [{'menu_item_id': 1, 'qty': 2, 'price_cents': 25000}]
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE;")
+        subtotal = sum(i['qty'] * i['price_cents'] for i in cart_items)
+        
+        order_no = generate_order_number()
+        cur = conn.execute(
+            "INSERT INTO orders (order_number, subtotal_cents, total_cents, cashier_id, order_type, status) VALUES (?,?,?,?,?,?)",
+            (order_no, subtotal, subtotal, cashier_id, order_type, 'awaiting_payment')
+        )
+        order_id = cur.lastrowid
+        
+        for item in cart_items:
+            line_total = item['qty'] * item['price_cents']
+            conn.execute(
+                "INSERT INTO order_items (order_id, menu_item_id, qty, unit_price_cents, line_total_cents) VALUES (?,?,?,?,?)",
+                (order_id, item['menu_item_id'], item['qty'], item['price_cents'], line_total)
+            )
+        conn.commit()
+        return order_id, order_no, subtotal
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
